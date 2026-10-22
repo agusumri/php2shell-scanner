@@ -30,6 +30,26 @@ Each tested path may receive a 42-byte control request and three probes totallin
 pip install -r requirements.txt
 ```
 
+### Docker
+
+Build the image:
+
+```
+docker build -t php2shell-scanner .
+```
+
+Run it with the same options as `scanner.py`:
+
+```
+docker run --rm php2shell-scanner -u https://example.com
+```
+
+Mount the current directory to read host lists and write results:
+
+```
+docker run --rm -v "$PWD:/data" -w /data php2shell-scanner -l hosts.txt -o results.json
+```
+
 ## Usage
 
 Scan a single host:
