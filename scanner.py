@@ -55,7 +55,7 @@ WRITE_BUFFER_LOW_WATER = 64 << 10
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 "
-    "Safari/537.36 Assetnote/1.0.0"
+    "Safari/537.36 PHP2Shell/1.0.0"
 )
 
 PROBES = ((1, 4000), (8, 1020), (20, 1020))
