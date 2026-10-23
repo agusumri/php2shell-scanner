@@ -61,6 +61,7 @@ DEFAULT_USER_AGENT = (
 PROBES = ((1, 4000), (8, 1020), (20, 1020))
 REJECTED_STATUSES = {400, 403, 411, 413, 414, 417, 422, 429, 431}
 FIXED_VERSIONS = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
+OLDEST_FIXED_BRANCH = min(FIXED_VERSIONS)
 VERSION_PATTERN = re.compile(r"PHP/(\d+)\.(\d+)\.(\d+)")
 HEADER_NAME_PATTERN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 SENSITIVE_HEADERS = {
@@ -644,6 +645,9 @@ def version_verdict(powered_by: str) -> Optional[str]:
     if not match:
         return None
     major, minor, patch = (int(value) for value in match.groups())
+    if (major, minor) < OLDEST_FIXED_BRANCH:
+        # Branches older than the oldest patched release never received a fix.
+        return "VULNERABLE"
     fixed_patch = FIXED_VERSIONS.get((major, minor))
     if fixed_patch is None:
         return None
