@@ -8,7 +8,7 @@ The scanner sends a minimal multipart control request followed by up to three cr
 
 A target is reported vulnerable when the probe produces a PHP memory-exhaustion error, a differential empty HTTP 500, a PHP-FPM worker failure, or an advertised PHP version known to be unpatched. Initial 5xx responses, common request-rejection statuses, and nonempty HTTP 500 responses without the PHP fatal-error signature are not treated as crash signals.
 
-The scanner tests `/index.php` by default. A path supplied in the URL is preserved, and `--path` or `--path-file` can test custom paths. phpMyAdmin targets are automatically retested at `/show_config_errors.php`. Redirects are not followed.
+The scanner tests `/index.php` by default. A path supplied in the URL is preserved, and `--path` or `--path-file` can test custom paths. phpMyAdmin targets are automatically retested at `/show_config_errors.php`. Redirects are not followed unless `--follow-redirects` is set.
 
 ### SAPI Modes
 
@@ -80,6 +80,7 @@ python3 scanner.py -u https://example.com --sapi fpm
 -o, --output      Output file for results (JSON)
 --all-results     Save all results, not just vulnerable hosts
 -k, --insecure    Disable TLS certificate verification
+--follow-redirects Follow HTTP redirects (up to 10 hops)
 -H, --header      Custom header (can be used multiple times)
 -v, --verbose     Show verdict reasons and response snippets
 -q, --quiet       Only output vulnerable hosts
