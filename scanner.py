@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
+from urllib.parse import SplitResult, quote, urljoin, urlsplit, urlunsplit
 
 try:
     import h11
@@ -578,29 +578,64 @@ def send_post(
     custom_headers: Dict[str, str],
     timeout: int,
     verify_ssl: bool,
+    follow_redirects: bool = False,
 ) -> HTTPResult:
-    result = HTTPResult(bytes_sent=len(body))
     headers = request_headers(custom_headers, boundary)
-    try:
-        response = asyncio.run(
-            timed_exchange_post(target_url, body, headers, timeout, verify_ssl)
-        )
+    result = HTTPResult()
+    current_url = target_url
+    for redirects in range(11 if follow_redirects else 1):
+        result.bytes_sent += len(body)
+        try:
+            response = asyncio.run(
+                timed_exchange_post(current_url, body, headers, timeout, verify_ssl)
+            )
+        except ssl.SSLError as exc:
+            result.error = f"SSL error: {exc}"
+            break
+        except asyncio.TimeoutError:
+            result.error = "request timed out"
+            break
+        except h11.RemoteProtocolError as exc:
+            result.error = f"response read failed: {exc}"
+            break
+        except (h11.LocalProtocolError, ValueError, UnicodeError) as exc:
+            result.error = f"request failed: {exc}"
+            break
+        except HTTPTransportError as exc:
+            result.error = f"response read failed: {exc}"
+            break
+        except OSError as exc:
+            result.error = f"connection error: {exc}"
+            break
+
         result.status_code = response.status_code
         result.reason = response.reason
         result.headers = response.headers
         result.body = response.body
-    except ssl.SSLError as exc:
-        result.error = f"SSL error: {exc}"
-    except asyncio.TimeoutError:
-        result.error = "request timed out"
-    except h11.RemoteProtocolError as exc:
-        result.error = f"response read failed: {exc}"
-    except (h11.LocalProtocolError, ValueError, UnicodeError) as exc:
-        result.error = f"request failed: {exc}"
-    except HTTPTransportError as exc:
-        result.error = f"response read failed: {exc}"
-    except OSError as exc:
-        result.error = f"connection error: {exc}"
+        location = header_value(response.headers, "Location").strip()
+        if (
+            not follow_redirects
+            or response.status_code not in (301, 302, 303, 307, 308)
+            or not location
+        ):
+            break
+        if redirects == 10:
+            result.error = "too many redirects (limit 10)"
+            break
+
+        next_url = urljoin(current_url, location)
+        old, new = urlsplit(current_url), urlsplit(next_url)
+        if new.scheme not in ("http", "https") or not new.hostname:
+            result.error = f"redirect to unsupported URL: {location}"
+            break
+        if (old.scheme.lower(), old.netloc.lower()) != (
+            new.scheme.lower(),
+            new.netloc.lower(),
+        ):
+            for name in list(headers):
+                if name.lower() in SENSITIVE_HEADERS or name.lower() == "host":
+                    del headers[name]
+        current_url = next_url
     return result
 
 
@@ -764,6 +799,7 @@ def check_url(
     verify_ssl: bool,
     custom_headers: Dict[str, str],
     sapi: str,
+    follow_redirects: bool = False,
 ) -> dict:
     result = base_result(host)
     result["tested_url"] = target_url
@@ -777,6 +813,7 @@ def check_url(
         custom_headers,
         timeout,
         verify_ssl,
+        follow_redirects,
     )
     result["request"] = request_dump(
         target_url,
@@ -807,6 +844,7 @@ def check_url(
             custom_headers,
             timeout,
             verify_ssl,
+            follow_redirects,
         )
         result["request"] = request_dump(
             target_url,
@@ -842,6 +880,7 @@ def check_url(
             custom_headers,
             timeout,
             verify_ssl,
+            follow_redirects,
         )
         probe_metadata = response_metadata(probe)
         probe_metadata.update({"probe": index, "size_mib": size_mib, "parts": parts})
@@ -932,6 +971,7 @@ def check_vulnerability(
     custom_headers: Optional[Dict[str, str]] = None,
     sapi: str = "auto",
     paths: Optional[List[str]] = None,
+    follow_redirects: bool = False,
 ) -> dict:
     display_host = safe_url_label(host)
     try:
@@ -955,6 +995,7 @@ def check_vulnerability(
             verify_ssl,
             custom_headers or {},
             sapi,
+            follow_redirects,
         )
         if result["vulnerable"] is True:
             return result
@@ -1097,6 +1138,11 @@ Examples:
         help="Disable TLS certificate verification",
     )
     parser.add_argument(
+        "--follow-redirects",
+        action="store_true",
+        help="Follow HTTP redirects (up to 10 hops)",
+    )
+    parser.add_argument(
         "-H",
         "--header",
         action="append",
@@ -1195,6 +1241,7 @@ def main() -> None:
                 custom_headers=custom_headers,
                 sapi=args.sapi,
                 paths=paths,
+                follow_redirects=args.follow_redirects,
             )
         except Exception as exc:  # Keep one bad target from aborting a scan.
             result = base_result(safe_url_label(host))
